@@ -689,8 +689,8 @@ namespace dxvk {
     // TODO: Once the vertex hash only uses vertices referenced by the index buffer, this should be removed.
     const bool highlightUnsafeAnchor = RtxOptions::useHighlightUnsafeAnchorMode() && input.getGeometryData().indexBuffer.defined() && input.getGeometryData().vertexCount > input.getGeometryData().indexCount;
     if (highlightUnsafeAnchor) {
-      const static MaterialData sHighlightMaterialData(OpaqueMaterialData(TextureRef(), TextureRef(), TextureRef(), TextureRef(), TextureRef(), TextureRef(), TextureRef(), TextureRef(), TextureRef(), TextureRef(), TextureRef(), TextureRef(),
-                                                                          0.f, 1.f, Vector3(0.2f, 0.2f, 0.2f), 1.0f, 0.1f, 0.1f, Vector3(0.46f, 0.26f, 0.31f), true, 1, 1, 0, false, false, 200.f, true, false, BlendType::kAlpha, false, AlphaTestType::kAlways, 0, 0.0f, 0.0f, Vector3(), 0.0f, Vector3(), 0.0f, false, Vector3(), 0.0f, 0.0f,
+      const static MaterialData sHighlightMaterialData(OpaqueMaterialData(TextureRef(), TextureRef(), TextureRef(), TextureRef(), TextureRef(), TextureRef(), TextureRef(), TextureRef(), TextureRef(), TextureRef(), TextureRef(), TextureRef(), TextureRef(), TextureRef(),
+                                                                          0.f, 1.f, Vector3(0.2f, 0.2f, 0.2f), 1.0f, 0.1f, 0.1f, Vector3(0.46f, 0.26f, 0.31f), true, false, 1, 1, 0, false, false, 200.f, true, false, BlendType::kAlpha, false, AlphaTestType::kAlways, 0, 0.0f, 0.0f, Vector3(), 0.0f, Vector3(), 0.0f, false, Vector3(), 0.0f, 0.0f,
                                                                           lss::Mdl::Filter::Nearest, lss::Mdl::WrapMode::Repeat, lss::Mdl::WrapMode::Repeat));
       return sHighlightMaterialData;
     }
@@ -826,8 +826,8 @@ namespace dxvk {
           renderMaterialData = *replacement.materialData;
         }
         if (highlightUnsafeReplacement) {
-          const static MaterialData sHighlightMaterialData(OpaqueMaterialData(TextureRef(), TextureRef(), TextureRef(), TextureRef(), TextureRef(), TextureRef(), TextureRef(), TextureRef(), TextureRef(), TextureRef(), TextureRef(), TextureRef(),
-              0.f, 1.f, Vector3(0.2f, 0.2f, 0.2f), 1.f, 0.1f, 0.1f, Vector3(1.f, 0.f, 0.f), true, 1, 1, 0, false, false, 200.f, true, false, BlendType::kAlpha, false, AlphaTestType::kAlways, 0, 0.0f, 0.0f, Vector3(), 0.0f, Vector3(), 0.0f, false, Vector3(), 0.0f, 0.0f,
+          const static MaterialData sHighlightMaterialData(OpaqueMaterialData(TextureRef(), TextureRef(), TextureRef(), TextureRef(), TextureRef(), TextureRef(), TextureRef(), TextureRef(), TextureRef(), TextureRef(), TextureRef(), TextureRef(), TextureRef(), TextureRef(),
+              0.f, 1.f, Vector3(0.2f, 0.2f, 0.2f), 1.f, 0.1f, 0.1f, Vector3(1.f, 0.f, 0.f), true, false, 1, 1, 0, false, false, 200.f, true, false, BlendType::kAlpha, false, AlphaTestType::kAlways, 0, 0.0f, 0.0f, Vector3(), 0.0f, Vector3(), 0.0f, false, Vector3(), 0.0f, 0.0f,
               lss::Mdl::Filter::Nearest, lss::Mdl::WrapMode::Repeat, lss::Mdl::WrapMode::Repeat));
           if ((GlobalTime::get().absoluteTimeMs()) / 200 % 2 == 0) {
             renderMaterialData = sHighlightMaterialData;
@@ -1199,15 +1199,30 @@ namespace dxvk {
         {}
       );
     }
+
+    const bool isBik = drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_BIK;
+
     uint32_t samplerIndex = trackSampler(sampler);
+    uint32_t samplerIndex1 = UINT32_MAX;
     uint32_t samplerIndex2 = UINT32_MAX;
     if (renderMaterialDataType == MaterialDataType::RayPortal) {
+      samplerIndex1 = trackSampler(drawCallState.getMaterialData().getSampler1());
+    }
+
+    if (isBik)
+    {
+      samplerIndex1 = trackSampler(drawCallState.getMaterialData().getSampler1());
       samplerIndex2 = trackSampler(drawCallState.getMaterialData().getSampler2());
     }
 
     XXH64_hash_t preCreationHash = renderMaterialData.getHash();
     preCreationHash = XXH64(&samplerIndex, sizeof(samplerIndex), preCreationHash);
-    preCreationHash = XXH64(&samplerIndex2, sizeof(samplerIndex2), preCreationHash);
+    if (isBik)
+    {
+      preCreationHash = XXH64(&samplerIndex1, sizeof(samplerIndex1), preCreationHash);
+      preCreationHash = XXH64(&samplerIndex2, sizeof(samplerIndex2), preCreationHash);
+    }
+    
     preCreationHash = XXH64(&hasTexcoords, sizeof(hasTexcoords), preCreationHash);
     preCreationHash = XXH64(&drawCallState.isUsingRaytracedRenderTarget, sizeof(drawCallState.isUsingRaytracedRenderTarget), preCreationHash);
 
@@ -1235,6 +1250,9 @@ namespace dxvk {
       uint32_t subsurfaceThicknessTextureIndex = kSurfaceMaterialInvalidTextureIndex;
       uint32_t subsurfaceSingleScatteringAlbedoTextureIndex = kSurfaceMaterialInvalidTextureIndex;
 
+      uint32_t bikRTextureIndex = kSurfaceMaterialInvalidTextureIndex;
+      uint32_t bikBTextureIndex = kSurfaceMaterialInvalidTextureIndex;
+
       float anisotropy;
       float emissiveIntensity;
       Vector4 albedoOpacityConstant;
@@ -1259,6 +1277,8 @@ namespace dxvk {
       float subsurfaceMaxSampleRadius = 0.0f;
 
       bool ignoreAlphaChannel = false;
+
+      uint8_t d3dModifierFlags = REMIX_MODIFIER_TO_OPAQUE_SHADER_NONE;
 
       constexpr Vector4 kWhiteModeAlbedo = Vector4(0.7f, 0.7f, 0.7f, 1.0f);
 
@@ -1289,7 +1309,7 @@ namespace dxvk {
       trackTexture(opaqueMaterialData.getHeightTexture(), heightTextureIndex, hasTexcoords, true, samplerFeedbackStamp);
       trackTexture(opaqueMaterialData.getEmissiveColorTexture(), emissiveColorTextureIndex, hasTexcoords, true, samplerFeedbackStamp);
 
-      emissiveIntensity = opaqueMaterialData.getEmissiveIntensity() * RtxOptions::emissiveIntensity();
+      emissiveIntensity = opaqueMaterialData.getEmissiveIntensity();// todo * RtxOptions::emissiveIntensity();
       emissiveColorConstant = opaqueMaterialData.getEmissiveColorConstant();
       enableEmissive = opaqueMaterialData.getEnableEmission();
       anisotropy = opaqueMaterialData.getAnisotropyConstant();
@@ -1301,6 +1321,31 @@ namespace dxvk {
       displaceOut = opaqueMaterialData.getDisplaceOut();
 
       ignoreAlphaChannel = opaqueMaterialData.getIgnoreAlphaChannel();
+
+      // rtx_materials.cpp is doing a hashlookup (ignoreAlphaChannel = lookupHash(RtxOptions::ignoreAlphaOnTextures(), getHash());)
+      // so we need to check d3d flag here
+      if (!ignoreAlphaChannel && CategoryFlags(drawCallState.materialData.remixTextureCategoryFlagsFromD3D).test(InstanceCategories::IgnoreAlphaChannel)) {
+        ignoreAlphaChannel = true;
+      }
+
+      if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_EMISSIVE_SCALAR) {
+        emissiveIntensity = drawCallState.materialData.remixFloatRS169FromD3D;
+      }
+
+      if (opaqueMaterialData.getEnableAlbedoEmission() || drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_EMISSIVE_FORCE_ON_WITH_ALBEDO) {
+        d3dModifierFlags |= REMIX_MODIFIER_TO_OPAQUE_SHADER_EMISSIVE_USE_ALBEDO;
+        enableEmissive = true;
+      }
+      else if(enableEmissive && drawCallState.testCategoryFlags(InstanceCategories::WorldUI)) {
+        d3dModifierFlags |= REMIX_MODIFIER_TO_OPAQUE_SHADER_EMISSIVE_USE_ALBEDO;
+      }
+
+      if (isBik) 
+      {
+        d3dModifierFlags |= REMIX_MODIFIER_TO_OPAQUE_SHADER_BIK;
+        trackTexture(opaqueMaterialData.getBikRTexture(), bikRTextureIndex, hasTexcoords, true, samplerFeedbackStamp);
+        trackTexture(opaqueMaterialData.getBikBTexture(), bikBTextureIndex, hasTexcoords, true, samplerFeedbackStamp);
+      }
 
       subsurfaceMeasurementDistance = opaqueMaterialData.getSubsurfaceMeasurementDistance() * RtxOptions::SubsurfaceScattering::surfaceThicknessScale();
 
@@ -1371,7 +1416,8 @@ namespace dxvk {
         thinFilmThicknessConstant, samplerIndex, displaceIn, displaceOut, 
         subsurfaceMaterialIndex, isUsingRaytracedRenderTarget,
         samplerFeedbackStamp,
-        secondaryTextureIndex
+        secondaryTextureIndex,
+        samplerIndex1, samplerIndex2, bikRTextureIndex, bikBTextureIndex, d3dModifierFlags,
       };
 
       if (opaqueSurfaceMaterial.hasValidDisplacement()) {
@@ -1380,7 +1426,47 @@ namespace dxvk {
 
       surfaceMaterial.emplace(opaqueSurfaceMaterial);
     } else if (renderMaterialDataType == MaterialDataType::Translucent) {
-      surfaceMaterial.emplace(createTranslucentSurfaceMaterial(renderMaterialData.getTranslucentMaterialData(), samplerIndex, hasTexcoords));
+      const auto& translucentMaterialData = renderMaterialData.getTranslucentMaterialData();
+
+      uint8_t d3dModifierFlags = REMIX_MODIFIER_TO_OPAQUE_SHADER_NONE;
+
+      uint32_t normalTextureIndex = kSurfaceMaterialInvalidTextureIndex;
+      uint32_t transmittanceTextureIndex = kSurfaceMaterialInvalidTextureIndex;
+      uint32_t emissiveColorTextureIndex = kSurfaceMaterialInvalidTextureIndex;
+
+      trackTexture(translucentMaterialData.getNormalTexture(), normalTextureIndex, hasTexcoords);
+      trackTexture(translucentMaterialData.getTransmittanceTexture(), transmittanceTextureIndex, hasTexcoords);
+      trackTexture(translucentMaterialData.getEmissiveColorTexture(), emissiveColorTextureIndex, hasTexcoords);
+
+      float refractiveIndex = translucentMaterialData.getRefractiveIndex();
+      Vector3 transmittanceColor = translucentMaterialData.getTransmittanceColor();
+      float transmittanceMeasureDistance = translucentMaterialData.getTransmittanceMeasurementDistance();
+      Vector3 emissiveColorConstant = translucentMaterialData.getEmissiveColorConstant();
+      bool enableEmissive = translucentMaterialData.getEnableEmission();
+      float emissiveIntensity = translucentMaterialData.getEmissiveIntensity();// todo * RtxOptions::emissiveIntensity();
+      bool isThinWalled = translucentMaterialData.getEnableThinWalled();
+      float thinWallThickness = translucentMaterialData.getThinWallThickness();
+      bool useDiffuseLayer = translucentMaterialData.getEnableDiffuseLayer();
+
+      if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_EMISSIVE_SCALAR) {
+        emissiveIntensity = drawCallState.materialData.remixFloatRS169FromD3D;
+      }
+
+      if (drawCallState.materialData.remixModifierFromD3D & REMIX_MODIFIER_FROM_D3D_EMISSIVE_FORCE_ON_WITH_ALBEDO) {
+        enableEmissive = true;
+        d3dModifierFlags |= REMIX_MODIFIER_TO_OPAQUE_SHADER_EMISSIVE_USE_ALBEDO;
+      }
+
+      const RtTranslucentSurfaceMaterial translucentSurfaceMaterial{
+        normalTextureIndex, transmittanceTextureIndex, emissiveColorTextureIndex,
+        refractiveIndex,
+        transmittanceMeasureDistance, transmittanceColor,
+        enableEmissive, emissiveIntensity, emissiveColorConstant,
+        isThinWalled, thinWallThickness, useDiffuseLayer, samplerIndex,
+        d3dModifierFlags
+      };
+
+      surfaceMaterial.emplace(translucentSurfaceMaterial);
     } else if (renderMaterialDataType == MaterialDataType::RayPortal) {
       const auto& rayPortalMaterialData = renderMaterialData.getRayPortalMaterialData();
 
@@ -1392,11 +1478,11 @@ namespace dxvk {
       uint8_t rayPortalIndex = rayPortalMaterialData.getRayPortalIndex();
       float rotationSpeed = rayPortalMaterialData.getRotationSpeed();
       bool enableEmissive = rayPortalMaterialData.getEnableEmission();
-      float emissiveIntensity = rayPortalMaterialData.getEmissiveIntensity() * RtxOptions::emissiveIntensity();
+      float emissiveIntensity = rayPortalMaterialData.getEmissiveIntensity();// todo * RtxOptions::emissiveIntensity();
 
       const RtRayPortalSurfaceMaterial rayPortalSurfaceMaterial{
         maskTextureIndex, maskTextureIndex2, rayPortalIndex,
-        rotationSpeed, enableEmissive, emissiveIntensity, samplerIndex, samplerIndex2
+        rotationSpeed, enableEmissive, emissiveIntensity, samplerIndex, samplerIndex1
       };
 
       surfaceMaterial.emplace(rayPortalSurfaceMaterial);
@@ -1438,7 +1524,8 @@ namespace dxvk {
       translucentMaterialData.getEnableThinWalled(),
       translucentMaterialData.getThinWallThickness(),
       translucentMaterialData.getEnableDiffuseLayer(),
-      samplerIndex
+      samplerIndex,
+      REMIX_MODIFIER_TO_TRANSLUCENT_SHADER_NONE
     };
   }
 
@@ -2039,7 +2126,7 @@ namespace dxvk {
   }
 
   static_assert(std::is_same_v< decltype(RtSurface::objectPickingValue), ObjectPickingValue>);
-
+#pragma optimize("", off)
   void SceneManager::submitExternalDraw(Rc<DxvkContext> ctx, ExternalDrawState&& state) {
     Rc<DxvkSampler> externalSampler = getOrCreateExternalSampler();
 

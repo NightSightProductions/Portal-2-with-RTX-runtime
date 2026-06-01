@@ -628,10 +628,10 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
   
   // Load Albedo/Opacity
 
-  f16vec3 albedo = opaqueSurfaceMaterial.albedoOpacityConstant.rgb;
-  float16_t opacity = opaqueSurfaceMaterial.albedoOpacityConstant.a;
-  float16_t emissiveBlendOverrideInfluence = float16_t(0.0f);
-  float16_t thinFilmThickness = float16_t(0.0f);
+  vec3 albedo = opaqueSurfaceMaterial.albedoOpacityConstant.rgb;
+  float opacity = opaqueSurfaceMaterial.albedoOpacityConstant.a;
+  float emissiveBlendOverrideInfluence = float(0.0f);
+  float thinFilmThickness = float(0.0f);
 
   // Baked terrain is the only surface using cascaded view positions, so key off of that
   const bool isBakedTerrain = surface.texcoordGenerationMode == uint(TexGenMode::CascadedViewPositions);
@@ -652,8 +652,8 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
 
     if (d3dModIsBik)
     {
-      f16vec4 bikRSample;
-      f16vec4 bikBSample;
+      vec4 bikRSample;
+      vec4 bikBSample;
       const bool bikRLoaded = surfaceMaterialInteractionTextureReadHelper(opaqueSurfaceMaterial.BikRTextureIndex, opaqueSurfaceMaterial.samplerIndex1, surfaceInteraction, bikRSample);
       const bool bikBLoaded = surfaceMaterialInteractionTextureReadHelper(opaqueSurfaceMaterial.BikBTextureIndex, opaqueSurfaceMaterial.samplerIndex2, surfaceInteraction, bikBSample);
 
@@ -681,9 +681,9 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
       // extreme values / FP16 issues causing color speckling when used as emissive.
       float3 bikRgb = float3(dot(c, tor), dot(c, tog), dot(c, tob));
       bikRgb = saturate(bikRgb);
-	  albedo.r = (float16_t)bikRgb.r;
-	  albedo.g = (float16_t)bikRgb.g;
-	  albedo.b = (float16_t)bikRgb.b;
+    albedo.r = bikRgb.r;
+    albedo.g = bikRgb.g;
+    albedo.b = bikRgb.b;
     }
 
     // Note: Thin film thickness and opacity deriving their values from the alpha channel are mutually exclusive, set the appropriate
@@ -708,7 +708,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
   // >> revert 
   // Load Emissive Color
 
-  f16vec3 emissiveColor = opaqueSurfaceMaterial.emissiveColorConstant;
+  vec3 emissiveColor = opaqueSurfaceMaterial.emissiveColorConstant;
 
   if (emissiveColorLoaded)
   {
@@ -788,7 +788,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
 
   if (opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_IGNORE_ALPHA_CHANNEL)
   {
-    opacity = 1.h;
+    opacity = 1.f;
   }
 
   // Note: Gamma correct albedo input (be it from a constant or a texture). Currently assuming all textures are not using sRGB formats which
